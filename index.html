@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>桃太郎の冒険：最終版</title>
+    <style>
+        body { display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f0f0f0; font-family: Arial, sans-serif; }
+        #gameContainer { text-align: center; position: relative; }
+        #gameCanvas { border: 2px solid #000; }
+        #score { margin-top: 10px; font-size: 20px; }
+        #message { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 48px; display: none; font-weight: bold; }
+        #result { position: absolute; top: 60%; left: 50%; transform: translate(-50%, -50%); font-size: 24px; display: none; text-align: left; }
+        #restart { position: absolute; top: 85%; left: 50%; transform: translate(-50%, -50%); font-size: 36px; display: none; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="400" height="400"></canvas>
+        <div id="score">仲間: 0</div>
+        <div id="message"></div>
+        <div id="result"></div>
+        <div id="restart">🔄</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const messageElement = document.getElementById('message');
+        const resultElement = document.getElementById('result');
+        const restartElement = document.getElementById('restart');
+
+        let gameState = {
+            player: { x: 200, y: 200, size: 30, speed: 5 },
+            companions: [],
+            oni: [],
+            collectedCompanions: [],
+            score: 0,
+            effects: [],
+            gameOver: false
+        };
+
+        const companionTypes = ['monkey', 'pheasant', 'dog'];
+
+        function createCompanion() {
+            const type = companionTypes[Math.floor(Math.random() * companionTypes.length)];
+            const size = type === 'pheasant' ? 16 : 20;
+            return {
+                x: Math.random() * (canvas.width - 40) + 20,
+                y: Math.random() * (canvas.height - 40) + 20,
+                size: size,
+                type: type,
+                hitCount: 0
+            };
+        }
+
+        function createOni() {
+            return {
+                x: Math.random() * (canvas.width - 40) + 20,
+                y: Math.random() * (canvas.height - 40) + 20,
+                size: 25,
+                speed: 1
+            };
+        }
+
+        function initGame() {
+            gameState = {
+                player: { x: 200, y: 200, size: 30, speed: 5 },
+                companions: [],
+                oni: [],
+                collectedCompanions: [],
+                score: 0,
+                effects: [],
+                gameOver: false
+            };
+
+            for (let i = 0; i < 5; i++) {
+                gameState.companions.push(createCompanion());
+            }
+            gameState.oni.push(createOni());
+
+            scoreElement.textContent = '仲間: 0';
+            resultElement.style.display = 'none';
+            restartElement.style.display = 'none';
+        }
+
+        initGame();
+
+        const keys = {};
+
+        document.addEventListener('keydown', (e) => keys[e.key] = true);
+        document.addEventListener('keyup', (e) => keys[e.key] = false);
+        restartElement.addEventListener('click', initGame);
+
+        function update() {
+            if (gameState.gameOver) return;
+
+            if (keys['ArrowUp']) gameState.player.y -= gameState.player.speed;
+            if (keys['ArrowDown']) gameState.player.y += gameState.player.speed;
+            if (keys['ArrowLeft']) gameState.player.x -= gameState.player.speed;
+            if (keys['ArrowRight']) gameState.player.x += gameState.player.speed;
+
+            gameState.player.x = Math.max(gameState.player.size/2, Math.min(canvas.width - gameState.player.size/2, gameState.player.x));
+            gameState.player.y = Math.max(gameState.player.size/2, Math.min(canvas.height - gameState.player.size/2, gameState.player.y));
+
+            gameState.companions = gameState.companions.filter(companion => {
+                const dx = gameState.player.x - companion.x;
+                const dy = gameState.player.y - companion.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance < gameState.player.size / 2 + companion.size) {
+                    companion.hitCount++;
+                    if (companion.hitCount >= 3) {
+                        gameState.score++;
+                        scoreElement.textContent = `仲間: ${gameState.score}`;
+                        gameState.effects.push({ x: companion.x, y: companion.y, size: 20, age: 0, color: 'yellow' });
+                        gameState.collectedCompanions.push({ type: companion.type });
+                        if (gameState.score === 10) {
+                            showMessage("More 10", 48, "gold");
+                        } else if (gameState.score === 20) {
+                            showPerfect();
+                        } else if (gameState.score === 30) {
+                            if (gameState.oni.length === 1) {
+                                gameState.oni.push(createOni());
+                            }
+                        } else if (gameState.score === 40) {
+                            gameState.oni.forEach(oni => oni.speed *= 1.5);
+                        } else if (gameState.score === 50) {
+                            showFinish();
+                        }
+                        return false;
+                    }
+                }
+                return true;
+            });
+
+            gameState.oni.forEach(oni => {
+                const dx = gameState.player.x - oni.x;
+                const dy = gameState.player.y - oni.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance < gameState.player.size / 2 + oni.size) {
+                    if (gameState.score > 0) {
+                        gameState.score--;
+                        scoreElement.textContent = `仲間: ${gameState.score}`;
+                        showMessage("Upps!", 48, "blue");
+                        gameState.collectedCompanions.pop();
+                    }
+                    oni.x = Math.random() * (canvas.width - 40) + 20;
+                    oni.y = Math.random() * (canvas.height - 40) + 20;
+                }
+                
+                oni.x += (gameState.player.x - oni.x) * oni.speed / distance;
+                oni.y += (gameState.player.y - oni.y) * oni.speed / distance;
+            });
+
+            while (gameState.companions.length < 5) {
+                gameState.companions.push(createCompanion());
+            }
+
+            gameState.effects = gameState.effects.filter(effect => {
+                effect.age++;
+                effect.size += 2;
+                return effect.age < 10;
+            });
+        }
+
+        function drawMomotaro(x, y, size) {
+            ctx.fillStyle = '#FFD700';
+            ctx.beginPath();
+            ctx.arc(x, y, size/2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = 'black';
+            ctx.beginPath();
+            ctx.arc(x - size/6, y - size/8, size/10, 0, Math.PI * 2);
+            ctx.arc(x + size/6, y - size/8, size/10, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(x, y + size/8, size/6, 0, Math.PI);
+            ctx.stroke();
+            ctx.fillStyle = 'red';
+            ctx.fillRect(x - size/2, y - size/3, size, size/6);
+        }
+
+        function drawCompanion(x, y, size, type) {
+            ctx.fillStyle = type === 'monkey' ? 'brown' : type === 'pheasant' ? '#9ACD32' : 'beige';
+            ctx.beginPath();
+            ctx.arc(x, y, size, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = 'black';
+            ctx.beginPath();
+            ctx.arc(x - size/3, y - size/3, size/5, 0, Math.PI * 2);
+            ctx.arc(x + size/3, y - size/3, size/5, 0, Math.PI * 2);
+            ctx.fill();
+            if (type === 'monkey') {
+                ctx.beginPath();
+                ctx.arc(x, y + size/3, size/3, 0, Math.PI);
+                ctx.stroke();
+            } else if (type === 'pheasant') {
+                ctx.fillStyle = 'orange';
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+                ctx.lineTo(x + size/2, y + size/3);
+                ctx.lineTo(x, y + size/2);
+                ctx.fill();
+            } else if (type === 'dog') {
+                ctx.fillStyle = 'beige';
+                ctx.beginPath();
+                ctx.moveTo(x - size/2, y - size/2);
+                ctx.lineTo(x - size, y - size);
+                ctx.lineTo(x - size, y - size/2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.moveTo(x + size/2, y - size/2);
+                ctx.lineTo(x + size, y - size);
+                ctx.lineTo(x + size, y - size/2);
+                ctx.fill();
+            }
+        }
+
+        function drawOni(x, y, size) {
+            ctx.fillStyle = 'red';
+            ctx.beginPath();
+            ctx.arc(x, y, size, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = 'black';
+            ctx.beginPath();
+            ctx.arc(x - size/3, y - size/3, size/5, 0, Math.PI * 2);
+            ctx.arc(x + size/3, y - size/3, size/5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.moveTo(x - size/2, y + size/3);
+            ctx.lineTo(x + size/2, y + size/3);
+            ctx.lineTo(x, y + size/2);
+            ctx.fill();
+            ctx.fillStyle = 'yellow';
+            ctx.beginPath();
+            ctx.moveTo(x - size/2, y - size);
+            ctx.lineTo(x - size/4, y - size/2);
+            ctx.lineTo(x - 3*size/4, y - size/2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(x + size/2, y - size);
+            ctx.lineTo(x + size/4, y - size/2);
+            ctx.lineTo(x + 3*size/4, y - size/2);
+            ctx.fill();
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawMomotaro(gameState.player.x, gameState.player.y, gameState.player.size);
+            gameState.companions.forEach(companion => {
+                drawCompanion(companion.x, companion.y, companion.size, companion.type);
+            });
+            gameState.oni.forEach(oni => {
+                drawOni(oni.x, oni.y, oni.size);
+            });
+            gameState.effects.forEach(effect => {
+                ctx.strokeStyle = effect.color;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(effect.x, effect.y, effect.size, 0, Math.PI * 2);
+                ctx.stroke();
+            });
+            gameState.collectedCompanions.forEach((companion, index) => {
+                drawCompanion(15 + (index % 10) * 25, canvas.height - 15 - Math.floor(index / 10) * 25, 10, companion.type);
+            });
+        }
+
+        function showMessage(text, finalSize, color) {
+            messageElement.textContent = text;
+            messageElement.style.color = color;
+            messageElement.style.display = 'block';
+            messageElement.style.fontSize = '0px';
+            let size = 0;
+            const interval = setInterval(() => {
+                size += 2;
+                messageElement.style.fontSize = size + 'px';
+                if (size >= finalSize) {
+                    clearInterval(interval);
+                    setTimeout(() => {
+                        messageElement.style.display = 'none';
+                    }, 1000);
+                }
+            }, 20);
+        }
+
+        function showPerfect() {
+            showMessage("Perfect!", 72, "#FF1493");
+            rotateMessage(360 * 2, 2);
+        }
+
+        function showFinish() {
+            showMessage("☆ＦＩＮＩＳＨ☆", 72, "red");
+            rotateMessage(360 * 3, 3);
+            gameState.gameOver = true;
+            setTimeout(() => {
+                const monkeys = gameState.collectedCompanions.filter(c => c.type === 'monkey').length;
+                const pheasants = gameState.collectedCompanions.filter(c => c.type === 'pheasant').length;
+                const dogs = gameState.collectedCompanions.filter(c => c.type === 'dog').length;
+                resultElement.innerHTML = `最終結果：<br>サル: ${monkeys}匹<br>キジ: ${pheasants}羽<br>犬: ${dogs}匹`;
+                resultElement.style.display = 'block';
+                restartElement.style.display = 'block';
+            }, 4000);
+        }
+
+        function rotateMessage(totalRotation, rotations) {
+            let rotation = 0;
+            const rotateInterval = setInterval(() => {
+                rotation += 5;
+                messageElement.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
+                if (rotation >= totalRotation) {
+                    clearInterval(rotateInterval);
+                    setTimeout(() => {
+                        messageElement.style.display = 'none';
+                        messageElement.style.transform = 'translate(-50%, -50%)';
+                    }, 1000);
+                }
+            }, 20);
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        gameLoop();
+    </script>
+</body>
+</html>
